@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >- 
+  This template has been developed to enable VPC Reachability Analyzer.
+Parameters:
+  port:
+    Description: The port to be checked
+    Default: 0
+    Type: Number
+  lambdaRoleArn:
+    Description: The role ARN to be attached to the lambda function
+    Type: String
+  destinationResourceID:
+    Description: The destination resource ID 
+    Type: String
+  protocol:
+    Description: The protocol to be analyze
+    AllowedValues:
+      - tcp 
+      - udp 
+    Type: String 
+  sourceResourceID:
+    Description: The source Resouce ID 
+    Type: String 
+Conditions:
+  analysisExplicitPort: !Not [!Equals [!Ref port, "0"]]
+Resources:
+  NetworkInsightsPath:
+    Type: 'AWS::EC2::NetworkInsightsPath'
+    Properties:
+      Destination: !Ref destinationResourceID
+      Protocol: !Ref protocol
+      Source: !Ref sourceResourceID
+      DestinationPort: !If [analysisExplicitPort,!Ref port, !Ref 'AWS::NoValue']
+  NetworkInsightsAnalysis:
+    Type: 'AWS::EC2::NetworkInsightsAnalysis'
+    DependsOn: NetworkInsightsPath
+    Properties:
+      NetworkInsightsPathId: !GetAtt 
+        - NetworkInsightsPath
+        - NetworkInsightsPathId
+  ConvertBooleanToString:
+    Type: 'Custom::Split'
+    Properties:
+      ServiceToken: !GetAtt
+        - ConvertBooleanToStringFunction
+        - Arn
+      ImputValue: !GetAtt
+        - NetworkInsightsAnalysis
+        - NetworkPathFound
+  ConvertBooleanToStringFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.handler
+      Role: !Ref lambdaRoleArn
+      Runtime: python3.7
+      Timeout: 5
+      Code:
+        ZipFile: |
+          import json
+          import cfnresponse
+          def handler(event,context):
+            responseValue = str((event['ResourceProperties']['ImputValue']))
+            responseData = {}
+            responseData['Data'] = responseValue
+            cfnresponse.send(event, context,cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+Outputs:
+  NetworkInsightsPathArn:
+    Description: The NetworkInsights Path ARN 
+    Value: !GetAtt
+      - NetworkInsightsPath
+      - NetworkInsightsPathArn
+  NetworkInsightsPathID:
+    Description: The NetworkInsights Path ID
+    Value: !GetAtt
+      - NetworkInsightsPath
+      - NetworkInsightsPathId
+  NetworkInsightsAnalysisStartDate:
+    Description: The NetworkInsights Analysis Start Date
+    Value: !GetAtt
+      - NetworkInsightsAnalysis
+      - StartDate
+  NetworkInsightsAnalysisStatus:
+    Description: The status of the Analysis
+    Value: !GetAtt
+      - NetworkInsightsAnalysis
+      - StartDate
+  NetworkInsightsAnalysisPathFound:
+    Description: Indicates wheter the destination is reachable from the source
+    Value: !GetAtt
+      - ConvertBooleanToString
+      - Data
